@@ -1,5 +1,7 @@
+import bcrypt
 from flask import request, jsonify, render_template, redirect
 from app import app, jwt
+from app.models import User
 from flask_jwt_extended import (
     jwt_required, create_access_token,
     jwt_refresh_token_required, create_refresh_token,
@@ -10,17 +12,24 @@ from flask_jwt_extended import (
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.form:
-        if request.form["username"] != "admin" or request.form["password"] != "admin":
-            return jsonify({'error': 'Username or Password Incorrect'}), 403
-        else:
-            access_token = create_access_token(identity=request.form["username"])
-            # Set the JWT cookies in the response
-            resp = jsonify({'login': True})
-            set_access_cookies(resp, access_token)
-            return resp, 200
-    else:
+
+    if not request.form:
         return render_template('login.html')
+
+    user = User.query.filter_by(username=request.form['username']).first()
+
+    if user is None:
+        return jsonify({'error': 'Username or Password Incorrect'}), 403
+
+    if bcrypt.checkpw(request.form['password'].encode('utf-8'), user.password.encode('utf-8')):
+        access_token = create_access_token(identity=user)
+        # Set the JWT cookies in the response
+        resp = jsonify({'login': True})
+        set_access_cookies(resp, access_token)
+        return resp, 200
+
+    return jsonify({'error': 'Username or Password Incorrect'}), 403
+
 
 @app.route('/logout', methods=['POST'])
 def logout():
@@ -29,7 +38,12 @@ def logout():
     return resp, 200
 
 @jwt.user_claims_loader
-def add_claims_to_access_token(identity):
+def add_claims_to_access_token(user):
     return {
-        'email': 'edwardday7@gmail.com',
+        'email': user.email,
+        'username': user.username
     }
+
+@jwt.user_identity_loader
+def user_identity_lookup(user):
+    return user.user_id
